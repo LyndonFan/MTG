@@ -5,7 +5,7 @@ import numpy as np
 
 # --- Draftsim classic bot (except for the hybrid cost logic)
 
-class ClassicBot(Bot):    
+class ClassicBot(Bot):
     '''Class Constants'''
     PACK_SIZE = 15
     RATING_THRESHOLD = 2.0
@@ -18,21 +18,22 @@ class ClassicBot(Bot):
     SECOND_COLOR_FRACTION = 0.8
     MULTICOLOR_PENALTY = 0.6
     COLORS = ['W', 'U', 'B', 'R', 'G']
-    HYBRID = {'A' : 'WB', 'D' : 'UB', 'M' : 'UG', 'L' : 'RG', 'I' : 'BG',
-              'V' : 'WB', 'S' : 'WR', 'Z' : 'UR', 'Y' : 'WG', 'K' : 'BR'}
-    
+    HYBRID = {'A': 'WB', 'D': 'UB', 'M': 'UG', 'L': 'RG', 'I': 'BG',
+              'V': 'WB', 'S': 'WR', 'Z': 'UR', 'Y': 'WG', 'K': 'BR'}
+
     def __init__(self, card_set):
         self.num_correct = 0
         self.num_total = 0
-        self.card_set = card_set # a list with 'Name' column, containing card names and attributes
-        
-        self.color_commitment = [0,0,0,0,0]
+        # a list with 'Name' column, containing card names and attributes
+        self.card_set = card_set
+
+        self.color_commitment = [0, 0, 0, 0, 0]
         self.eval_pack = []
-        
+
         # self.card_set = create_set(setRatingPath, landRatingPath)
         # self.card_set['Name'] = self.card_set.Name.str.replace(',','')
         self.card_set = self.card_set.set_index('Name')
-        #print(self.card_set.to_string())
+        # print(self.card_set.to_string())
         '''Structure:  
         Name: Death_Baron
         Casting Cost 1: 1BB
@@ -41,7 +42,8 @@ class ClassicBot(Bot):
         Rarity: M,R,U,C
         Rating: draftsim rating from -1 for lands, and up to 5 or something
         Color Vector: something like [0, 0, 1, 1, 1]  or [0, 0, 2, 0, 0]'''
-        
+        self.card_set['CMC'] = self.card_set['Color Vector'].apply(np.sum)
+
     def rank_pack(self, draft_frame):
         pack_rank = self.__get_ranking(draft_frame)
         top_pick = self.get_top_pick(pack_rank)
@@ -49,28 +51,31 @@ class ClassicBot(Bot):
         if top_pick == draft_frame[0][0]:
             self.num_correct += 1
         return pack_rank
-        
+
     def __get_ranking(self, draft_frame):
         pack = draft_frame[0]
-        collection = draft_frame[1] 
+        collection = draft_frame[1]
         color_commit = self.get_color_commitment(collection)
-        evaluated_pack = [self.get_color_bias(card, color_commit) + 
+        evaluated_pack = [self.get_color_bias(card, color_commit) +
                           float(self.card_set.loc[card]['Rating']) for card in pack]
-        self.eval_pack = evaluated_pack              
-        return {draft_frame[0][i]:evaluated_pack[i] for i in range(len(pack))}
-    
+        self.eval_pack = evaluated_pack
+        return {draft_frame[0][i]: evaluated_pack[i] for i in range(len(pack))}
+
     def get_color_commitment(self, collection):
-        temp_color_commitment = [0,0,0,0,0]
+        temp_color_commitment = [0, 0, 0, 0, 0]
         for card in collection:
             new_card = self.get_card_colors(card)
             # pythonic vector addition
-            temp_color_commitment = list(map(sum, zip(new_card, temp_color_commitment)))
+            temp_color_commitment = list(
+                map(sum, zip(new_card, temp_color_commitment)))
         return temp_color_commitment
-    
+
     def get_color_bias(self, card, commitment):
         card_colors = self.get_card_colors(card)
-        num_card_colors = sum([1 if symbol != 0 else 0 for symbol in card_colors])
-        num_commit_colors = sum([1 if symbol >= self.COLOR_COMMIT_THRESHOLD else 0 for symbol in commitment])
+        num_card_colors = sum(
+            [1 if symbol != 0 else 0 for symbol in card_colors])
+        num_commit_colors = sum(
+            [1 if symbol >= self.COLOR_COMMIT_THRESHOLD else 0 for symbol in commitment])
 
         denom = self.COLOR_COMMIT_THRESHOLD / self.MAX_BONUS_SPEC
 
@@ -95,8 +100,8 @@ class ClassicBot(Bot):
             bias = 0
             # loop through colors
             for i in range(len(commitment)):
-                #if self.COLORS[i] in card_cost:
-                if card_colors[i]>0:
+                # if self.COLORS[i] in card_cost:
+                if card_colors[i] > 0:
                     bias += commitment[i]
                 else:
                     bias -= commitment[i]
@@ -107,7 +112,8 @@ class ClassicBot(Bot):
             # --- AKh: I'm just commenting all hybrid stuff for now, as I cannot troubleshoot it on this set
             '''hybrid = self.is_hybrid(card)  # boolean does this card have hybrid mana symbols?'''
             # Note that the commit_argsorted is ASCENDING
-            commit_argsorted = np.argsort(commitment)  # an list of the players color commitments
+            # an list of the players color commitments
+            commit_argsorted = np.argsort(commitment)
 
             # The hybrid case
             '''if hybrid:
@@ -132,7 +138,7 @@ class ClassicBot(Bot):
 
             # get the index of which color the card is
             # should be the max of the card colors if its the only non-zero entry
-            #color_index = card_colors.index(max(card_colors))  # index of the card's color
+            # color_index = card_colors.index(max(card_colors))  # index of the card's color
             color_index = np.argmax(card_colors)
 
             # base bias
@@ -151,17 +157,20 @@ class ClassicBot(Bot):
             # give it a slight bonus
 
             if num_commit_colors == 1 and color_index == commit_argsorted[-2]:
-                bias = max(self.SECOND_COLOR_FRACTION * self.COLOR_COMMIT_THRESHOLD / denom, bias)
+                bias = max(self.SECOND_COLOR_FRACTION *
+                           self.COLOR_COMMIT_THRESHOLD / denom, bias)
 
             return bias
-        
+
     def get_card_colors(self, card):
-        try:
-            temp = self.card_set.loc[card]['Color Vector']
-        except:
-            print("Unexpected card:",card," Assuming no color identity")
-            temp = [0,0,0,0,0]
-        return temp
-    
+        return self.card_set.loc[card, 'Color Vector']
+        # try:
+        #     temp = self.card_set.loc[card]['Color Vector']
+        # except:
+        #     print("Unexpected card:", card, " Assuming no color identity")
+        #     temp = [0, 0, 0, 0, 0]
+        # return temp
+
     def get_card_cost(self, card):
-        return np.sum(self.card_set.loc[card]['Color Vector'])
+        return self.card_set.loc[card, 'CMC']
+        # return np.sum(self.card_set.loc[card]['Color Vector'])

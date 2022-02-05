@@ -2,23 +2,26 @@
 
 from .bot import *
 from .load import collection_pack_to_x
+import torch
+
 
 class NeuralNetBot(Bot):
-    
+
     def __init__(self, net, le):
         self.num_correct = 0
         self.num_total = 0
-        self.net = net # Pre-trained neural net that ranks cards from one-hot encoded [collection, pack] vector
+        # Pre-trained neural net that ranks cards from one-hot encoded [collection, pack] vector
+        self.net = net
         self.le = le   # Pre-trained label-encoder mapping card names to numeric class labels
-        
+
     def rank_pack(self, draft_frame):
         """
-        INPUT: one draft frame in form [pack, collection], where the human pick is the first 
+        INPUT: one draft frame in form [pack, collection], where the human pick is the first
                card name in the pack
         OUTPUT: ranked list of pick preferences. E.g. for the pack ["cardA", "cardB", "cardC"], could
                 return ["cardB":1, "cardA":0.2, "cardC":0] in decreasing order of preference
         NOTE: use list not tuple or dict for input
-    
+
         This method is to be called by the testing script. Modify the get_choice method
         with the drafting logic of your bot's subclass.
         """
@@ -31,17 +34,17 @@ class NeuralNetBot(Bot):
             self.num_correct += 1
 
         return pack_rank
-        
+
     def __get_ranking(self, draft_frame):
         """
-        INPUT: one draft frame in form [pack, collection], where the human pick is the first 
+        INPUT: one draft frame in form [pack, collection], where the human pick is the first
                card name in the pack
-        OUTPUT: list of pick preferences in same order as input. E.g. for the pack 
+        OUTPUT: list of pick preferences in same order as input. E.g. for the pack
                 ["cardA", "cardB", "cardC"], could return ["cardA":0.2, "cardB":1, "cardC":0]
-    
+
         Picks the rarest on-color card in each pack.
         """
-        
+
         # Initializes pack ranking and separates pack from collection
         pack = draft_frame[0]
         collection = draft_frame[1]
@@ -49,8 +52,18 @@ class NeuralNetBot(Bot):
         # Maps card names to one-hot encoding and gets nnet ranking
         x = collection_pack_to_x(collection, pack, self.le)
         pred = self.net(x)
-        
-        # Maps predictions to card names
-        pack_rank = {str(self.le.inverse_transform([i])[0]) : float(v.detach().numpy()) for i, v in enumerate(pred[0,:]) if v > 0}
-        
+
+        # # Maps predictions to card names
+        # # original, slowest
+        # pack_rank = {str(self.le.inverse_transform([i])[0]): float(
+        #     v.detach().numpy()) for i, v in enumerate(pred[0, :]) if v > 0}
+        # # faster
+        # pack_rank = {str(self.le.inverse_transform([i])[0]):
+        #              pred[0, i].item() for i in torch.nonzero(pred[0]).flatten()}
+        # # fastest
+        idxs = torch.nonzero(pred[0]).flatten().tolist()
+        names = self.le.inverse_transform(idxs)
+        pack_rank = {name: pred[0, idx].item()
+                     for name, idx in zip(names, idxs)}
+
         return pack_rank
